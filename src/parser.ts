@@ -1,7 +1,20 @@
 import { EmbeddedActionsParser, IToken } from 'chevrotain';
 
 import * as Tokens from './tokens';
-import { BuildFile, LoadStatement, RenamedSymbolLoad, SymbolLoad } from './ast';
+import {
+  ArrayTypeNode,
+  BoolTypeNode,
+  BuildFile,
+  GlobNode,
+  IdentifierNode,
+  LoadStatementNode,
+  NumberLiteralNode,
+  RenamedSymbolLoadNode,
+  RuleAttributeNode,
+  RuleNode,
+  StringLiteralNode,
+  SymbolLoadNode
+} from './ast';
 
 export class BuildParser extends EmbeddedActionsParser {
   constructor() {
@@ -32,7 +45,7 @@ export class BuildParser extends EmbeddedActionsParser {
     };
   });
 
-  private loadStatement = this.RULE<LoadStatement>('loadStatement', () => {
+  private loadStatement = this.RULE<LoadStatementNode>('loadStatement', () => {
     this.CONSUME(Tokens.Load);
     this.CONSUME(Tokens.LParen);
 
@@ -60,7 +73,7 @@ export class BuildParser extends EmbeddedActionsParser {
     };
   });
 
-  private symbolLoad = this.RULE<SymbolLoad>('symbolLoad', () => {
+  private symbolLoad = this.RULE<SymbolLoadNode>('symbolLoad', () => {
     const symbol = this.CONSUME(Tokens.StringLiteral);
 
     return {
@@ -69,7 +82,7 @@ export class BuildParser extends EmbeddedActionsParser {
     };
   });
 
-  private symbolRenameLoad = this.RULE<RenamedSymbolLoad>(
+  private symbolRenameLoad = this.RULE<RenamedSymbolLoadNode>(
     'symbolRenameLoad',
     () => {
       const identifier = this.CONSUME(Tokens.Identifier);
@@ -84,7 +97,7 @@ export class BuildParser extends EmbeddedActionsParser {
     }
   );
 
-  private buildRule = this.RULE('buildRule', () => {
+  private buildRule = this.RULE<RuleNode>('buildRule', () => {
     const kind = this.CONSUME(Tokens.Identifier);
     this.CONSUME(Tokens.LParen);
 
@@ -113,75 +126,125 @@ export class BuildParser extends EmbeddedActionsParser {
     };
   });
 
-  private ruleAttributeValue = this.RULE('ruleAttributeValue', () => {
-    return this.OR([
-      {
-        ALT: () => {
-          const value = this.CONSUME(Tokens.StringLiteral);
-          return {
-            type: 'STRING_LITERAL_RULE_ATTRIBUTE_VALUE',
-            value: value.image
-          };
-        }
-      },
-      {
-        ALT: () => {
-          const values = [];
-          this.CONSUME(Tokens.LSquare);
-          this.MANY_SEP({
-            SEP: Tokens.Comma,
-            DEF: () => {
-              const value = this.OR1([
-                { ALT: () => this.CONSUME1(Tokens.StringLiteral) },
-                { ALT: () => this.CONSUME1(Tokens.NumberLiteral) },
-                { ALT: () => this.CONSUME(Tokens.Identifier) }
-              ]);
-              values.push(value.image);
-            }
-          });
-          this.CONSUME(Tokens.RSquare);
+  private ruleAttributeValue = this.RULE<RuleAttributeNode>(
+    'ruleAttributeValue',
+    () => {
+      return this.OR([
+        { ALT: () => this.SUBRULE(this.stringLiteral) },
+        { ALT: () => this.SUBRULE(this.numberLiteral) },
+        { ALT: () => this.SUBRULE(this.boolValue) },
+        { ALT: () => this.SUBRULE(this.identifierNode) },
+        { ALT: () => this.SUBRULE(this.arrayType) },
+        { ALT: () => this.SUBRULE(this.globNode) }
+      ]);
+    }
+  );
 
-          return {
-            type: 'ARRAY_RULE_ATTRIBUTE_VALUE',
-            value: values
-          };
-        }
-      },
-      {
-        ALT: () => {
-          const value = this.OR2([
-            { ALT: () => this.CONSUME(Tokens.True) },
-            { ALT: () => this.CONSUME(Tokens.False) },
-            { ALT: () => this.CONSUME(Tokens.IntTrue) },
-            { ALT: () => this.CONSUME(Tokens.IntFalse) }
-          ]);
-
-          return {
-            type: 'BOOL_RULE_ATTRIBUTE_VALUE',
-            value: value.image === '1' || value.image === 'True',
-            raw: value.image
-          };
-        }
-      },
-      {
-        ALT: () => {
-          const value = this.CONSUME(Tokens.NumberLiteral);
-
-          return {
-            type: 'NUM_RULE_ATTRIBUTE_VALUE',
-            value: Number(value.image)
-          };
-        }
-      }
-    ]);
-  });
-
-  private stringValue = this.RULE('stringValue', () => {
+  private stringLiteral = this.RULE<StringLiteralNode>('stringLiteral', () => {
     const value = this.CONSUME(Tokens.StringLiteral);
 
     return {
       type: 'STRING_LITERAL',
+      raw: value.image,
       value: value.image.replace(/['"]+/g, '')
+    };
+  });
+
+  private numberLiteral = this.RULE<NumberLiteralNode>('numberLiteral', () => {
+    const value = this.CONSUME(Tokens.NumberLiteral);
+
+    return {
+      type: 'NUMBER_LITERAL',
+      raw: value.image,
+      value: Number(value.image.replace(/['"]+/g, ''))
+    };
+  });
+
+  private boolValue = this.RULE<BoolTypeNode>('boolValue', () => {
+    const value = this.OR([
+      { ALT: () => this.CONSUME(Tokens.True) },
+      { ALT: () => this.CONSUME(Tokens.False) }
+    ]);
+
+    return {
+      type: 'BOOLEAN',
+      raw: value.image,
+      value: value.image?.replace(/['"]+/g, '').toLowerCase() === 'true'
+    };
+  });
+
+  private identifierNode = this.RULE<IdentifierNode>('identifierNode', () => {
+    const identifier = this.CONSUME(Tokens.Identifier);
+
+    return {
+      type: 'IDENTIFIER_NODE',
+      raw: identifier.image,
+      value: identifier.image.replace(/['"]+/g, '')
+    };
+  });
+
+  private arrayType = this.RULE<ArrayTypeNode>('arrayType', () => {
+    const values = [];
+    this.CONSUME(Tokens.LSquare);
+    this.MANY_SEP({
+      SEP: Tokens.Comma,
+      DEF: () => {
+        const value = this.OR1([
+          { ALT: () => this.SUBRULE(this.stringLiteral) },
+          { ALT: () => this.SUBRULE(this.numberLiteral) },
+          { ALT: () => this.SUBRULE(this.identifierNode) },
+          { ALT: () => this.SUBRULE(this.boolValue) }
+        ]);
+        values.push(value);
+      }
+    });
+    this.CONSUME(Tokens.RSquare);
+
+    return {
+      type: 'ARRAY_TYPE',
+      values: values
+    };
+  });
+
+  private globNode = this.RULE<GlobNode>('globNode', () => {
+    this.CONSUME(Tokens.Glob);
+    this.CONSUME(Tokens.LParen);
+
+    let includes;
+    let excludes;
+
+    this.MANY_SEP({
+      SEP: Tokens.Comma,
+      DEF: () => {
+        this.OR([
+          {
+            ALT: () => {
+              includes = this.SUBRULE(this.arrayType)?.values;
+            }
+          },
+          {
+            ALT: () => {
+              const id = this.CONSUME(Tokens.Identifier);
+              this.CONSUME(Tokens.Equals);
+              const array = this.SUBRULE1(this.arrayType)?.values;
+
+              if (id.image?.toLowerCase() === 'include') {
+                includes = array;
+              } else {
+                excludes = array;
+              }
+            }
+          }
+        ]);
+      }
+    });
+
+    this.CONSUME(Tokens.RParen);
+
+    return {
+      type: 'GLOB',
+      includes,
+      excludes
     };
   });
 }

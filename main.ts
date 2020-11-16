@@ -10,8 +10,19 @@ ts_library(
     linting = True,
     auto_deps = 0,
     deps = 1,
-    num = 123409876 
+    num = 123409876,
+    deps = glob(["**/*.ts"], exclude = [])
 )
+
+_bar(name = "sheep")
 `;
 
-parseBuild(BUILD);
+const result = parseBuild(BUILD);
+if (result.errors) {
+  console.error(result.errors);
+  process.exit(1);
+}
+
+console.log('Parsed:');
+console.log(JSON.stringify(result.ast, null, 2));
+

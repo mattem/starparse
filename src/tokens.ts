@@ -8,6 +8,10 @@ export const Load = createToken({
   name: 'Load',
   pattern: /load/
 });
+export const Glob = createToken({
+  name: 'Glob',
+  pattern: /glob/
+});
 
 export const StringLiteral = createToken({
   name: 'StringLiteral',
@@ -19,17 +23,6 @@ export const NumberLiteral = createToken({
 });
 export const True = createToken({ name: 'True', pattern: /True/ });
 export const False = createToken({ name: 'False', pattern: /False/ });
-export const IntTrue = createToken({
-  name: 'IntTrue',
-  pattern: /1/,
-  longer_alt: NumberLiteral
-});
-export const IntFalse = createToken({
-  name: 'IntFalse',
-  pattern: /0/,
-  longer_alt: NumberLiteral
-});
-
 export const Integer = createToken({ name: 'Integer', pattern: /0|[1-9]\d*/ });
 
 export const Comma = createToken({ name: 'Comma', pattern: /,/ });
@@ -56,10 +49,9 @@ export const AllTokens = [
   WhiteSpace,
   // "keywords" appear before the Identifier
   Load,
+  Glob,
   // The Identifier must appear after the keywords because all keywords are valid identifiers.
   StringLiteral,
-  IntTrue,
-  IntFalse,
   NumberLiteral,
   True,
   False,
