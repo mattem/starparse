@@ -5,15 +5,22 @@ import {
   ArrayTypeNode,
   BoolTypeNode,
   BuildFile,
+  DictTypeNode,
+  ExportsFilesDeclarationNode,
   GlobNode,
   IdentifierNode,
+  InitializerType,
   LoadStatementNode,
   NumberLiteralNode,
+  PackageDeclarationNode,
+  PackageGroupDeclarationNode,
   RenamedSymbolLoadNode,
   RuleAttributeNode,
   RuleNode,
+  SelectStatementNode,
   StringLiteralNode,
-  SymbolLoadNode
+  SymbolLoadNode,
+  VariableDeclarationNode
 } from './ast';
 
 export class BuildParser extends EmbeddedActionsParser {
@@ -29,19 +36,42 @@ export class BuildParser extends EmbeddedActionsParser {
 
   private parseBuild = this.RULE<BuildFile>('BUILD', () => {
     const loads = [];
-    this.MANY({
-      DEF: () => loads.push(this.SUBRULE(this.loadStatement))
+    this.OPTION(() => {
+      this.MANY(() => {
+        loads.push(this.SUBRULE(this.loadStatement));
+      });
     });
 
     const rules = [];
+    const declarations = [];
+
+    let exportsFilesNode;
+
     this.MANY1({
-      DEF: () => rules.push(this.SUBRULE(this.buildRule))
+      DEF: () => {
+        this.OR([
+          { ALT: () => rules.push(this.SUBRULE(this.buildRule)) },
+          { ALT: () => declarations.push(this.SUBRULE(this.declaration)) },
+          { ALT: () => exportsFilesNode = this.SUBRULE(this.exportsFiles) }
+        ]);
+      }
     });
+
+    const packageDeclarationNode = this.OPTION2(() =>
+      this.SUBRULE(this.package)
+    );
+    const packageGroupDeclarationNode = this.OPTION3(() =>
+      this.SUBRULE(this.packageGroup)
+    );
 
     return {
       type: 'BUILD_FILE',
-      loads: loads,
-      rules: rules
+      exportsFiles: exportsFilesNode,
+      package: packageDeclarationNode,
+      packageGroup: packageGroupDeclarationNode,
+      loads,
+      rules,
+      declarations
     };
   });
 
@@ -97,17 +127,139 @@ export class BuildParser extends EmbeddedActionsParser {
     }
   );
 
+  private declaration = this.RULE<VariableDeclarationNode>(
+    'declaration',
+    () => {
+      const identifier = this.CONSUME(Tokens.Identifier);
+      this.CONSUME(Tokens.Equals);
+      const assignment = this.SUBRULE(this.assignment);
+
+      return {
+        type: 'VARIABLE_DECLARATION',
+        identifier: identifier.image,
+        initializer: assignment
+      };
+    }
+  );
+
+  private package = this.RULE<PackageDeclarationNode>('package', () => {
+    this.CONSUME(Tokens.Package);
+    this.CONSUME(Tokens.LParen);
+
+    const node: PackageDeclarationNode = {
+      type: 'PACKAGE_DECLARATION'
+    };
+
+    this.MANY_SEP({
+      SEP: Tokens.Comma,
+      DEF: () => {
+        const id = this.CONSUME(Tokens.Identifier);
+        this.CONSUME(Tokens.Equals);
+
+        const assignment = this.SUBRULE(this.assignment);
+        switch (id.image?.replace(/['"]+/g, '')) {
+          case 'default_visibility':
+            node.defaultVisibility = assignment;
+            break;
+          case 'default_deprecation':
+            node.defaultDeprecation = assignment;
+            break;
+          case 'default_testonly':
+            node.defaultTestonly = assignment;
+            break;
+          case 'features':
+            node.features = assignment;
+            break;
+        }
+
+        this.SUBRULE(this.optionalTrailingComma);
+      }
+    });
+
+    this.CONSUME(Tokens.RParen);
+
+    return node;
+  });
+
+  private packageGroup = this.RULE<PackageGroupDeclarationNode>(
+    'packageGroup',
+    () => {
+      this.CONSUME(Tokens.PackageGroup);
+      this.CONSUME(Tokens.LParen);
+
+      const node: PackageGroupDeclarationNode = {
+        type: 'PACKAGE_GROUP_DECLARATION'
+      };
+
+      this.MANY_SEP({
+        SEP: Tokens.Comma,
+        DEF: () => {
+          const id = this.CONSUME(Tokens.Identifier);
+          this.CONSUME(Tokens.Equals);
+
+          const assignment = this.SUBRULE(this.assignment);
+          switch (id.image?.replace(/['"]+/g, '')) {
+            case 'name':
+              node.name = assignment;
+              break;
+            case 'packages':
+              node.packages = assignment;
+              break;
+            case 'includes':
+              node.includes = assignment;
+              break;
+          }
+
+          this.SUBRULE(this.optionalTrailingComma);
+        }
+      });
+
+      this.CONSUME(Tokens.RParen);
+
+      return node;
+    }
+  );
+
+  private exportsFiles = this.RULE<ExportsFilesDeclarationNode>(
+    'exportsFiles',
+    () => {
+      this.CONSUME(Tokens.ExportsFiles);
+      this.CONSUME(Tokens.LParen);
+
+      // the files array is required
+      const files = this.SUBRULE(this.arrayOrIdentifierTypeNode);
+
+      // other attrs are not required
+      const visibility = this.OPTION(() => {
+        this.CONSUME(Tokens.Comma);
+        this.CONSUME(Tokens.Identifier);
+        this.CONSUME(Tokens.Equals);
+
+        return this.SUBRULE1(this.arrayOrIdentifierTypeNode);
+      });
+
+      this.SUBRULE1(this.optionalTrailingComma);
+      this.CONSUME(Tokens.RParen);
+
+      return {
+        type: 'EXPORTS_FILES_DECLARATION',
+        files,
+        visibility
+      };
+    }
+  );
+
   private buildRule = this.RULE<RuleNode>('buildRule', () => {
     const kind = this.CONSUME(Tokens.Identifier);
     this.CONSUME(Tokens.LParen);
 
-    const attributes = [];
+    const attributes: RuleAttributeNode[] = [];
     this.MANY_SEP({
       SEP: Tokens.Comma,
       DEF: () => {
         const identifier = this.CONSUME1(Tokens.Identifier);
         this.CONSUME(Tokens.Equals);
-        const value = this.SUBRULE(this.ruleAttributeValue);
+        const value = this.SUBRULE(this.assignment);
 
         attributes.push({
           type: 'RULE_ATTRIBUTE',
@@ -126,19 +278,18 @@ export class BuildParser extends EmbeddedActionsParser {
     };
   });
 
-  private ruleAttributeValue = this.RULE<RuleAttributeNode>(
-    'ruleAttributeValue',
-    () => {
-      return this.OR([
-        { ALT: () => this.SUBRULE(this.stringLiteral) },
-        { ALT: () => this.SUBRULE(this.numberLiteral) },
-        { ALT: () => this.SUBRULE(this.boolValue) },
-        { ALT: () => this.SUBRULE(this.identifierNode) },
-        { ALT: () => this.SUBRULE(this.arrayType) },
-        { ALT: () => this.SUBRULE(this.globNode) }
-      ]);
-    }
-  );
+  private assignment = this.RULE('assignmentStatement', () => {
+    return this.OR<InitializerType>([
+      { ALT: () => this.SUBRULE(this.stringLiteral) },
+      { ALT: () => this.SUBRULE(this.numberLiteral) },
+      { ALT: () => this.SUBRULE(this.boolValue) },
+      { ALT: () => this.SUBRULE(this.identifierNode) },
+      { ALT: () => this.SUBRULE(this.arrayType) },
+      { ALT: () => this.SUBRULE(this.globNode) },
+      { ALT: () => this.SUBRULE(this.dictType) },
+      { ALT: () => this.SUBRULE(this.selectStatement) }
+    ]);
+  });
 
   private stringLiteral = this.RULE<StringLiteralNode>('stringLiteral', () => {
     const value = this.CONSUME(Tokens.StringLiteral);
@@ -206,6 +357,36 @@ export class BuildParser extends EmbeddedActionsParser {
     };
   });
 
+  private dictType = this.RULE<DictTypeNode>('dictType', () => {
+    this.CONSUME(Tokens.LCurly);
+    const values = [];
+
+    this.MANY_SEP({
+      SEP: Tokens.Comma,
+      DEF: () => {
+        const key = this.SUBRULE(this.stringLiteral);
+        this.CONSUME(Tokens.Colon);
+        const value = this.SUBRULE(this.assignment);
+
+        const node = {
+          type: 'DICT_ENTRY_NODE',
+          key,
+          value
+        };
+
+        values.push(node);
+      }
+    });
+
+    this.SUBRULE(this.optionalTrailingComma);
+    this.CONSUME(Tokens.RCurly);
+
+    return {
+      type: 'DICT_TYPE',
+      values
+    };
+  });
+
   private globNode = this.RULE<GlobNode>('globNode', () => {
     this.CONSUME(Tokens.Glob);
     this.CONSUME(Tokens.LParen);
@@ -247,4 +428,52 @@ export class BuildParser extends EmbeddedActionsParser {
       excludes
     };
   });
+
+  private optionalTrailingComma = this.RULE<void>(
+    'optionalTrailingComma',
+    () => {
+      this.OPTION(() => this.CONSUME(Tokens.Comma));
+    }
+  );
+
+  private arrayOrIdentifierTypeNode = this.RULE<ArrayTypeNode | IdentifierNode>(
+    'arrayOrIdentifierType',
+    () => {
+      return this.OR([
+        { ALT: () => this.SUBRULE(this.identifierNode) },
+        { ALT: () => this.SUBRULE(this.arrayType) }
+      ]);
+    }
+  );
+
+  private selectStatement = this.RULE<SelectStatementNode>(
+    'selectStatement',
+    () => {
+      this.CONSUME(Tokens.Select);
+      const constraint = this.OR([
+        { ALT: () => this.SUBRULE(this.identifierNode) },
+        { ALT: () => this.SUBRULE(this.dictType) }
+      ]);
+
+      const node: SelectStatementNode = {
+        type: 'SELECT_STATEMENT_NODE',
+        constraint
+      };
+
+      this.OPTION({
+        DEF: () => {
+          this.CONSUME(Tokens.Comma);
+          this.CONSUME(Tokens.Identifier);
+          this.CONSUME(Tokens.Equals);
+
+          node.noMatchErrorNode = this.OR1([
+            { ALT: () => this.SUBRULE(this.stringLiteral) },
+            { ALT: () => this.SUBRULE1(this.identifierNode) }
+          ]);
+        }
+      });
+
+      return node;
+    }
+  );
 }

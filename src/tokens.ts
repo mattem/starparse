@@ -4,14 +4,18 @@ export const Identifier = createToken({
   name: 'Identifier',
   pattern: /[A-Za-z_]\w*/
 });
-export const Load = createToken({
-  name: 'Load',
-  pattern: /load/
+export const Load = createToken({ name: 'Load', pattern: /load/ });
+export const Glob = createToken({ name: 'Glob', pattern: /glob/ });
+export const ExportsFiles = createToken({
+  name: 'ExportsFiles',
+  pattern: /exports_files/
 });
-export const Glob = createToken({
-  name: 'Glob',
-  pattern: /glob/
+export const Package = createToken({ name: 'Package', pattern: /package/ });
+export const PackageGroup = createToken({
+  name: 'PackageGroup',
+  pattern: /package_group/
 });
+export const Select = createToken({ name: 'Select', pattern: /select/ });
 
 export const StringLiteral = createToken({
   name: 'StringLiteral',
@@ -26,6 +30,7 @@ export const False = createToken({ name: 'False', pattern: /False/ });
 export const Integer = createToken({ name: 'Integer', pattern: /0|[1-9]\d*/ });
 
 export const Comma = createToken({ name: 'Comma', pattern: /,/ });
+export const Colon = createToken({ name: 'Comma', pattern: /:/ });
 export const LSquare = createToken({ name: 'LParen', pattern: /\[/ });
 export const RSquare = createToken({ name: 'RParen', pattern: /]/ });
 export const LParen = createToken({ name: 'LParen', pattern: /\(/ });
@@ -50,6 +55,10 @@ export const AllTokens = [
   // "keywords" appear before the Identifier
   Load,
   Glob,
+  ExportsFiles,
+  PackageGroup,
+  Package,
+  Select,
   // The Identifier must appear after the keywords because all keywords are valid identifiers.
   StringLiteral,
   NumberLiteral,
@@ -57,6 +66,7 @@ export const AllTokens = [
   False,
   Identifier,
   Comma,
+  Colon,
   LSquare,
   RSquare,
   LParen,

@@ -91,9 +91,17 @@ export interface ArrayTypeNode {
   /**
    * List of contained values in the array
    */
-  values: Array<
-    StringLiteralNode | NumberLiteralNode | BoolTypeNode | IdentifierNode
-  >;
+  values: Array<InitializerType>;
+}
+
+export interface DictTypeNode extends Node {
+  type: 'DICT_TYPE';
+
+  values: Array<{
+    type: 'DICT_ENTRY_NODE';
+    key: StringLiteralNode;
+    value: InitializerType;
+  }>;
 }
 
 export interface IdentifierNode extends Node {
@@ -125,13 +133,31 @@ export interface GlobNode extends Node {
   excludes?: Array<StringLiteralNode | IdentifierNode>;
 }
 
-export type RuleAttributeType =
+export interface SelectStatementNode extends Node {
+  type: 'SELECT_STATEMENT_NODE';
+
+  /**
+   * Nodes for the constraint statement assigned to this select
+   */
+  constraint: DictTypeNode | IdentifierNode;
+
+  /**
+   * Node for the error message argument in the select statement
+   */
+  noMatchErrorNode?: StringLiteralNode | IdentifierNode;
+}
+
+export type InitializerType =
   | StringLiteralNode
   | NumberLiteralNode
   | BoolTypeNode
   | ArrayTypeNode
   | IdentifierNode
+  | DictTypeNode
+  | SelectStatementNode
   | GlobNode;
+
+export type RuleAttributeType = InitializerType;
 
 export interface RuleAttributeNode extends Node {
   type: 'RULE_ATTRIBUTE';
@@ -161,6 +187,68 @@ export interface RuleNode extends Node {
   attributes: RuleAttributeNode[];
 }
 
+export interface VariableDeclarationNode extends Node {
+  type: 'VARIABLE_DECLARATION';
+
+  /**
+   * Symbol for the identifier for this declaration
+   */
+  identifier: string;
+
+  /**
+   * Initializer statement for the variable declaration
+   */
+  initializer: InitializerType;
+}
+
+export interface PackageDeclarationNode extends Node {
+  type: 'PACKAGE_DECLARATION';
+
+  /**
+   * The default visibility nodes applied to this package
+   */
+  defaultVisibility?: InitializerType;
+
+  /**
+   * The default deprecation nodes applied to this package
+   */
+  defaultDeprecation?: InitializerType;
+
+  /**
+   * The default testonly nodes applied to this package
+   */
+  defaultTestonly?: InitializerType;
+
+  /**
+   * The features nodes applied to this package
+   */
+  features?: InitializerType;
+}
+
+export interface PackageGroupDeclarationNode extends Node {
+  type: 'PACKAGE_GROUP_DECLARATION';
+
+  name?: InitializerType;
+
+  packages?: InitializerType;
+
+  includes?: InitializerType;
+}
+
+export interface ExportsFilesDeclarationNode extends Node {
+  type: 'EXPORTS_FILES_DECLARATION';
+
+  /**
+   * The list of files found in the array
+   */
+  files: ArrayTypeNode | IdentifierNode;
+
+  /**
+   * List of visibility assignments to these files
+   */
+  visibility?: ArrayTypeNode | IdentifierNode;
+}
+
 export interface BuildFile extends Node {
   type: 'BUILD_FILE';
 
@@ -173,4 +261,24 @@ export interface BuildFile extends Node {
    * List of rules found in the BUILD file
    */
   rules: RuleNode[];
+
+  /**
+   * List of variable declarations in the BUILD file
+   */
+  declarations: VariableDeclarationNode[];
+
+  /**
+   * Node describing a package declaration statement
+   */
+  package?: PackageDeclarationNode | undefined;
+
+  /**
+   * Node describing a package_group declaration statement
+   */
+  packageGroup?: PackageGroupDeclarationNode | undefined;
+
+  /**
+   * Node describing a exports_files declaration statement
+   */
+  exportsFiles?: ExportsFilesDeclarationNode | undefined;
 }
